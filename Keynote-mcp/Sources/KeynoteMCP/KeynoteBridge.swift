@@ -17,19 +17,36 @@ enum AppleScriptError: Error, LocalizedError {
 // MARK: - AppleScript Runner
 
 struct AppleScriptRunner {
-    /// Runs an AppleScript and returns the string result.
-    /// Throws `AppleScriptError` on failure so callers can surface it as an MCP error.
+    /// Runs an AppleScript with a timeout, returning the string result.
+    /// Throws if the script fails or if Keynote blocks (e.g. shows a dialog) beyond the timeout.
     @discardableResult
-    static func run(_ script: String) throws -> String {
-        var errorDict: NSDictionary?
-        let appleScript = NSAppleScript(source: script)
-        guard let descriptor = appleScript?.executeAndReturnError(&errorDict) else {
-            let message = (errorDict?[NSAppleScript.errorMessage] as? String)
-                ?? (errorDict?.description)
-                ?? "Unknown AppleScript error"
-            throw AppleScriptError.executionFailed(message)
+    static func run(_ script: String, timeout: TimeInterval = 30) throws -> String {
+        var result: String?
+        var thrownError: Error?
+        let semaphore = DispatchSemaphore(value: 0)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            var errorDict: NSDictionary?
+            let appleScript = NSAppleScript(source: script)
+            if let descriptor = appleScript?.executeAndReturnError(&errorDict) {
+                result = descriptor.stringValue ?? ""
+            } else {
+                let message = (errorDict?[NSAppleScript.errorMessage] as? String)
+                    ?? (errorDict?.description)
+                    ?? "Unknown AppleScript error"
+                thrownError = AppleScriptError.executionFailed(message)
+            }
+            semaphore.signal()
         }
-        return descriptor.stringValue ?? ""
+
+        guard semaphore.wait(timeout: .now() + timeout) != .timedOut else {
+            throw AppleScriptError.executionFailed(
+                "Keynote did not respond within \(Int(timeout))s — it may be showing a dialog. Check the screen and dismiss any open dialogs, then retry."
+            )
+        }
+
+        if let error = thrownError { throw error }
+        return result ?? ""
     }
 }
 
@@ -44,6 +61,9 @@ enum KeynoteBridge {
     /// Create a new Keynote presentation with an optional theme.
     /// Returns the file path of the new document.
     static func createPresentation(title: String, theme: String?, outputPath: String) throws -> String {
+        let dir = (outputPath as NSString).deletingLastPathComponent
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+
         let themeLine: String
         if let theme = theme, !theme.isEmpty {
             themeLine = "set the document theme of newDoc to theme \"\(theme)\""
