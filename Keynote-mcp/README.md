@@ -1,6 +1,8 @@
 # KeynoteMCP
 
-A Swift MCP (Model Context Protocol) server that lets Claude Code control Apple Keynote via AppleScript over stdio.
+A Swift MCP (Model Context Protocol) server that lets Claude Code control Apple Keynote via AppleScript and Accessibility APIs over stdio.
+
+---
 
 ## Requirements
 
@@ -8,10 +10,24 @@ A Swift MCP (Model Context Protocol) server that lets Claude Code control Apple 
 - Xcode 16+ / Swift 6.0+
 - Apple Keynote installed
 
-## Build
+---
+
+## Installation
+
+### Option A — Homebrew (recommended)
 
 ```bash
-cd KeynoteMCP
+brew tap Sablesync/tap
+brew install keynote-mcp
+```
+
+The binary is installed at `/opt/homebrew/bin/keynote-mcp`.
+
+### Option B — Build from source
+
+```bash
+git clone https://github.com/Sablesync/Keynote-mcp.git
+cd Keynote-mcp/Keynote-mcp
 swift build -c release
 ```
 
@@ -20,37 +36,42 @@ The compiled binary will be at:
 .build/release/keynote-mcp
 ```
 
-Optionally install it somewhere permanent:
+Optionally copy it to a permanent location:
 ```bash
 cp .build/release/keynote-mcp /usr/local/bin/keynote-mcp
 ```
 
-## Configure Claude Code
+---
 
-Add to your project's `.claude/settings.json`:
+## Connect to Claude Code
 
-```json
-{
-  "mcpServers": {
-    "keynote": {
-      "command": "/usr/local/bin/keynote-mcp",
-      "args": []
-    }
-  }
-}
+Run the following command using the path that matches your install method:
+
+**Homebrew install:**
+```bash
+claude mcp add keynote-mcp /opt/homebrew/bin/keynote-mcp
 ```
 
-Or use the absolute path to `.build/release/keynote-mcp` if you haven't installed it globally.
+**Built from source:**
+```bash
+claude mcp add keynote-mcp /path/to/Keynote-mcp/Keynote-mcp/.build/release/keynote-mcp
+```
 
-Then restart Claude Code. You should see `keynote` in your MCP server list.
+Then restart Claude Code. Verify the server is connected by running `/mcp` inside Claude Code — you should see `keynote-mcp` listed as active.
+
+---
 
 ## Permissions
 
-On first run, macOS will ask you to grant Automation permissions to Terminal (or whichever app runs Claude Code) to control Keynote. Accept the prompt or go to:
+Two permissions are required on first use:
 
-> **System Settings → Privacy & Security → Automation**
+### 1. Accessibility
+Go to **System Settings → Privacy & Security → Accessibility** and enable your terminal app (Terminal, iTerm2, etc.).
 
-and enable the toggle for Keynote under your terminal app.
+### 2. Automation
+On first run macOS will prompt you to allow your terminal to control Keynote. Click **OK**, or go to **System Settings → Privacy & Security → Automation** and enable **Keynote** under your terminal app.
+
+---
 
 ## Available Tools
 
@@ -62,6 +83,7 @@ and enable the toggle for Keynote under your terminal app.
 | `set_slide_content` | Set title and/or body text on a slide |
 | `add_text_box` | Add a free-floating text box to a slide |
 | `add_image` | Add an image file to a slide |
+| `add_3d_object` | Insert a USDZ/USDA/USDC 3D object onto a slide |
 | `set_theme` | Change the presentation theme |
 
 ### Read
@@ -79,38 +101,95 @@ and enable the toggle for Keynote under your terminal app.
 | `stop_slideshow` | Stop the slideshow |
 | `export_presentation` | Export to PDF, PowerPoint, HTML, or QuickTime |
 
+---
+
 ## Example Prompts
 
+### Create a pitch deck from scratch
 ```
-Create a 5-slide pitch deck at ~/Desktop/pitch.key using the Black theme.
+Create a 6-slide pitch deck at ~/Desktop/pitch.key using the Black theme.
 Slide 1: Title "AVELA AI", subtitle "On-device intelligence for Apple platforms"
-Slide 2–5: add relevant content sections, then export it to PDF.
+Slide 2: Title "The Problem", body "Current AI requires cloud — slow, expensive, private data exposed"
+Slide 3: Title "Our Solution", body "On-device inference with sub-100ms latency"
+Slide 4: Title "Market Opportunity", body "$42B TAM by 2027"
+Slide 5: Title "Team", body "Ex-Apple, Google, and OpenAI engineers"
+Slide 6: Title "Ask", body "Raising $3M seed round"
+Then export it to PDF at ~/Desktop/pitch.pdf
 ```
 
+### Open and read an existing presentation
 ```
 Open ~/Desktop/pitch.key and list all slides with their titles.
 ```
 
+### Edit a specific slide
+```
+Open ~/Desktop/pitch.key, go to slide 3, and update the body text to
+include three bullet points about our traction metrics.
+```
+
+### Insert a 3D object
+```
+Open ~/Desktop/pitch.key, go to slide 2, and insert the 3D model at ~/Desktop/product.usdz.
+```
+
+### Export to multiple formats
+```
+Export ~/Desktop/pitch.key as both a PDF and a PowerPoint file to ~/Desktop/.
+```
+
+---
+
+## Troubleshooting
+
+### `keynote-mcp` not showing in `/mcp`
+- Restart Claude Code after running `claude mcp add`
+- Verify the binary path is correct: `ls /opt/homebrew/bin/keynote-mcp`
+- Check Claude Code logs for startup errors
+
+### "Keynote is not running"
+- Open Keynote and load a presentation before calling any tool
+- Use `open_presentation` as the first tool call to open your file
+
+### "Accessibility permission denied"
+- Go to **System Settings → Privacy & Security → Accessibility**
+- Make sure your terminal app is listed and toggled **on**
+- If it's not listed, drag your terminal app into the list manually
+
+### "Could not find menu item 'Insert > 3D Object'"
+- The `add_3d_object` tool requires Keynote to be the frontmost app
+- Make sure no other dialog is open in Keynote before calling the tool
+
+### Build fails with PCH module cache error
+This happens when the project folder is moved. Fix by clearing the build cache:
+```bash
+rm -rf .build
+swift build -c release
+```
+
+---
+
 ## Architecture
 
 ```
-KeynoteMCP/
+Keynote-mcp/
 ├── Package.swift
 └── Sources/KeynoteMCP/
-    ├── main.swift            # stdio MCP server entry point
-    ├── KeynoteBridge.swift   # AppleScript automation layer
-    ├── ToolDefinitions.swift # MCP tool schemas
-    └── ToolDispatcher.swift  # Routes tool calls to bridge
+    ├── main.swift                # stdio MCP server entry point
+    ├── KeynoteBridge.swift       # AppleScript automation layer
+    ├── AccessibilityBridge.swift # AX API layer for 3D object insertion
+    ├── ToolDefinitions.swift     # MCP tool schemas
+    └── ToolDispatcher.swift      # Routes tool calls to bridge
 ```
 
-The server speaks JSON-RPC 2.0 over stdio using the official
-[modelcontextprotocol/swift-sdk](https://github.com/modelcontextprotocol/swift-sdk).
-All AppleScript errors are surfaced as MCP error responses with full detail.
+The server communicates via JSON-RPC 2.0 over stdio using the official [modelcontextprotocol/swift-sdk](https://github.com/modelcontextprotocol/swift-sdk). All AppleScript and Accessibility errors are surfaced as MCP error responses with full detail.
+
+---
 
 ## Extending
 
 To add a new tool:
-1. Add a `ToolName` constant in `ToolDefinitions.swift`
+1. Add a constant in `ToolDefinitions.swift`
 2. Add the `Tool(...)` definition to `ToolDefinitions.all`
-3. Add the AppleScript implementation to `KeynoteBridge.swift`
+3. Add the implementation to `KeynoteBridge.swift` or `AccessibilityBridge.swift`
 4. Add the dispatch `case` in `ToolDispatcher.dispatch`
