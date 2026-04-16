@@ -57,8 +57,11 @@ enum AccessibilityBridge {
             throw AccessibilityError.permissionDenied
         }
 
-        // ── Step 1: Navigate to slide via AppleScript ───────────────────────
-        let navScript = """
+        let filename = (objectPath as NSString).lastPathComponent
+        let dir      = (objectPath as NSString).deletingLastPathComponent
+
+        // ── Step 1: Activate Keynote and navigate to the target slide ─────────
+        try AppleScriptRunner.run("""
         tell application "Keynote"
             activate
             open POSIX file "\(documentPath)"
@@ -66,56 +69,86 @@ enum AccessibilityBridge {
                 set current slide to slide \(slideIndex)
             end tell
         end tell
-        """
-        var navErr: NSDictionary?
-        NSAppleScript(source: navScript)?.executeAndReturnError(&navErr)
-        if let err = navErr {
-            throw AccessibilityError.axError("Navigation failed: \(err[NSAppleScript.errorMessage] ?? err)")
-        }
-        Thread.sleep(forTimeInterval: 1.2)
+        """, timeout: 20)
+
+        // Wait until Keynote is confirmed frontmost (up to 5 s) before touching the UI
+        try waitForKeynoteFocus(timeout: 5)
 
         // ── Step 2: Click Insert > 3D Object… via AX menu ──────────────────
         let axApp = try keynoteAXApp()
         try clickMenuItem(in: axApp, menu: "Insert", item: "3D Object\u{2026}")
-        // "3D Object…" uses the Unicode ellipsis character \u2026
-        Thread.sleep(forTimeInterval: 1.0)
 
-        // ── Step 3: In the file picker, use Cmd+Shift+G to open Go To Folder ─
-        // The file picker (NSOpenPanel) is now frontmost.
-        // We send Cmd+Shift+G to open the path entry sheet, type the path, confirm.
-        try sendKeyCombo(key: 0x05, flags: [.maskCommand, .maskShift]) // Cmd+Shift+G = 'g'
+        // Wait until the file-picker sheet appears (up to 5 s)
+        try waitForFilePicker(timeout: 5)
+
+        // ── Step 3: Open Go To Folder and paste path ────────────────────────
+        // Use clipboard so paths with spaces work without escaping
+        try sendKeyCombo(key: 0x05, flags: [.maskCommand, .maskShift]) // Cmd+Shift+G
         Thread.sleep(forTimeInterval: 0.6)
 
-        // Type the directory of the file into the Go To Folder field
-        let dir = (objectPath as NSString).deletingLastPathComponent
-        let filename = (objectPath as NSString).lastPathComponent
-        try typeString(dir)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(dir, forType: .string)
+        try sendKeyCombo(key: 0x09, flags: .maskCommand) // Cmd+V — paste directory
         Thread.sleep(forTimeInterval: 0.3)
 
-        // Press Return to navigate to the folder
-        try sendKey(key: 0x24) // Return
-        Thread.sleep(forTimeInterval: 0.8)
-
-        // Type the filename to select it
-        try typeString(filename)
-        Thread.sleep(forTimeInterval: 0.4)
-
-        // Press Return / click Insert to confirm
-        try sendKey(key: 0x24) // Return
+        try sendKey(key: 0x24) // Return — navigate to folder
         Thread.sleep(forTimeInterval: 1.0)
 
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(filename, forType: .string)
+        try sendKeyCombo(key: 0x09, flags: .maskCommand) // Cmd+V — paste filename
+        Thread.sleep(forTimeInterval: 0.3)
+
+        try sendKey(key: 0x24) // Return — Insert
+        Thread.sleep(forTimeInterval: 1.5)
+
         // ── Step 4: Save via AppleScript ────────────────────────────────────
-        let saveScript = """
+        try AppleScriptRunner.run("""
         tell application "Keynote"
             save front document in POSIX file "\(documentPath)"
         end tell
-        """
-        NSAppleScript(source: saveScript)?.executeAndReturnError(nil)
+        """, timeout: 20)
 
-        return "3D object '\((objectPath as NSString).lastPathComponent)' inserted on slide \(slideIndex) and saved."
+        return "3D object '\(filename)' inserted on slide \(slideIndex) and saved."
     }
 
     // MARK: - AX Helpers
+
+    /// Polls until Keynote is the frontmost app, or throws after `timeout` seconds.
+    private static func waitForKeynoteFocus(timeout: TimeInterval) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.iWork.Keynote" {
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        throw AccessibilityError.axError(
+            "Keynote did not become frontmost within \(Int(timeout))s. " +
+            "Click on the Keynote window and retry."
+        )
+    }
+
+    /// Polls until a file-picker window (NSOpenPanel) appears over Keynote, or throws after `timeout` seconds.
+    private static func waitForFilePicker(timeout: TimeInterval) throws {
+        let keynoteApp = try keynoteAXApp()
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            var windowsRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(keynoteApp, kAXWindowsAttribute as CFString, &windowsRef)
+            if let windows = windowsRef as? [AXUIElement] {
+                for window in windows {
+                    var roleRef: CFTypeRef?
+                    AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &roleRef)
+                    if let subrole = roleRef as? String, subrole == kAXDialogSubrole as String {
+                        return
+                    }
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+        throw AccessibilityError.filePickerNotFound
+    }
 
     /// Get the AXUIElement for the running Keynote process.
     private static func keynoteAXApp() throws -> AXUIElement {
