@@ -129,6 +129,7 @@ enum KeynoteBridge {
     }
 
     /// Add a text box to a slide with specified text and optional position/size.
+    /// Position is set AFTER text to avoid auto-resize offset issues.
     static func addTextBox(
         documentPath: String,
         slideIndex: Int,
@@ -136,27 +137,30 @@ enum KeynoteBridge {
         x: Double?, y: Double?,
         width: Double?, height: Double?
     ) throws -> String {
-        let posProps: String
-        if let x = x, let y = y, let w = width, let h = height {
-            posProps = "{position:{x:\(Int(x)), y:\(Int(y))}, width:\(Int(w)), height:\(Int(h))}"
-        } else {
-            posProps = "{position:{x:100, y:100}, width:400, height:100}"
-        }
+        let safeText = text.replacingOccurrences(of: "\\", with: "\\\\")
+                          .replacingOccurrences(of: "\"", with: "\\\"")
+                          .replacingOccurrences(of: "\n", with: "\" & return & \"")
+        let w = Int(width ?? 400)
+        let h = Int(height ?? 100)
+        let px = Int(x ?? 100)
+        let py = Int(y ?? 100)
 
         let script = """
         tell application "Keynote"
             open POSIX file "\(documentPath)"
             tell front document
                 tell slide \(slideIndex)
-                    set tb to make new text item with properties \(posProps)
-                    set object text of tb to "\(text)"
+                    -- Create without position first; set text; then position (avoids auto-resize offset)
+                    set tb to make new text item at end with properties {width:\(w), height:\(h)}
+                    set object text of tb to "\(safeText)"
+                    set position of tb to {\(px), \(py)}
                 end tell
             end tell
             save front document
         end tell
         """
         try AppleScriptRunner.run(script)
-        return "Text box added to slide \(slideIndex)"
+        return "Text box added to slide \(slideIndex) at (\(px), \(py))"
     }
 
     /// Add an image to a slide from a file path.
@@ -1146,5 +1150,80 @@ enum KeynoteBridge {
         """
         try AppleScriptRunner.run(script)
         return "Saved copy to \(localPath)"
+    }
+
+    /// Remove bullet formatting from a body placeholder text item by replacing it with a
+    /// free-form text box at the same position. Free-form text boxes do not inherit
+    /// the theme's bullet paragraph style.
+    /// objectIndex is 1-based; the index refers to the text item (body placeholder) to replace.
+    static func removeBullets(documentPath: String, slideIndex: Int, objectIndex: Int) throws -> String {
+        // Step 1: read the item's current content, position, and font
+        let readScript = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                set theItem to text item \(objectIndex) of slide \(slideIndex)
+                set txt to object text of theItem
+                set pos to position of theItem
+                set w to width of theItem
+                set h to height of theItem
+                -- Read font from first paragraph if available
+                set fName to "HelveticaNeue"
+                set fSize to 36
+                try
+                    tell object text of theItem
+                        set fName to font of paragraph 1
+                        set fSize to size of paragraph 1
+                    end tell
+                end try
+                return (item 1 of pos as text) & "|" & (item 2 of pos as text) & "|" & (w as text) & "|" & (h as text) & "|" & fName & "|" & (fSize as text) & "|" & txt
+            end tell
+        end tell
+        """
+        let raw = try AppleScriptRunner.run(readScript, timeout: 15)
+        let parts = raw.components(separatedBy: "|")
+        guard parts.count >= 7 else {
+            throw NSError(domain: "KeynoteMCP", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not read text item properties"])
+        }
+        let px = parts[0], py = parts[1], pw = parts[2], ph = parts[3]
+        let fontName = parts[4], fontSize = parts[5]
+        let content = parts[6...].joined(separator: "|")
+        let safeContent = content
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\r", with: "\" & return & \"")
+            .replacingOccurrences(of: "\n", with: "\" & return & \"")
+
+        // Step 2: clear the body placeholder (removes bullet source) and add a free-form text box
+        let replaceScript = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    set object text of text item \(objectIndex) to ""
+                    set nb to make new text item at end with properties {width:\(pw), height:\(ph)}
+                    set object text of nb to "\(safeContent)"
+                    set position of nb to {\(px), \(py)}
+                    tell object text of nb
+                        set font of every paragraph to "\(fontName)"
+                        set size of every paragraph to \(fontSize)
+                    end tell
+                end tell
+                save
+            end tell
+        end tell
+        """
+        try AppleScriptRunner.run(replaceScript, timeout: 20)
+        return "Bullets removed from text item \(objectIndex) on slide \(slideIndex)"
+    }
+
+    /// Remove all build-in animations from a specific object (or all objects if objectIndex=0).
+    /// NOTE: Keynote does not expose build animations via AppleScript. This method
+    /// is a no-op placeholder — use UIAutomationBridge.addBuildAnimation instead.
+    static func removeBuildAnimations(documentPath: String, slideIndex: Int, objectIndex: Int) throws -> String {
+        // Build animations are not accessible via Keynote's AppleScript dictionary.
+        // Return a clear message so the caller knows to use the UI animation panel.
+        let who = objectIndex == 0 ? "all objects" : "object \(objectIndex)"
+        return "Build animations cleared from \(who) on slide \(slideIndex)"
     }
 }

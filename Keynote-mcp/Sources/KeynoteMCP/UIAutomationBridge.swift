@@ -302,7 +302,8 @@ enum UIAutomationBridge {
 
     // MARK: - Animate Panel
 
-    /// Open the Animate panel (required to add build-in/build-out animations to objects).
+    /// Open the Animate panel by clicking the Animate (radio button 2) tab in the inspector.
+    /// Works even if the View menu has no "Animate" item (Keynote 14+).
     static func openAnimatePanel(documentPath: String) throws -> String {
         let script = """
         tell application "Keynote"
@@ -310,9 +311,192 @@ enum UIAutomationBridge {
             open POSIX file "\(documentPath)"
             delay 0.3
         end tell
-        """ + "\n" + menuClick("View", item: "Animate")
+        tell application "System Events"
+            tell process "Keynote"
+                set w to window 1
+                -- The right inspector has 3 radio buttons: Format / Animate / Document
+                -- Click button 2 (Animate)
+                set rg to radio group 1 of w
+                click radio button 2 of rg
+                delay 0.5
+            end tell
+        end tell
+        """
         try AppleScriptRunner.run(script, timeout: 10)
         return "Animate panel opened — select an object in Keynote and click 'Add an Effect'"
+    }
+
+    /// Add a build-in animation to a specific iWork item on a slide.
+    /// Uses UI automation because Keynote's AppleScript dictionary does not expose build animations.
+    /// effect: appear (default) | fade | move_in | wipe | shimmer | sparkle | pop
+    /// buildBy: paragraph (default) | all_at_once
+    static func addBuildAnimation(
+        documentPath: String,
+        slideIndex: Int,
+        objectIndex: Int,
+        effect: String,
+        buildBy: String?
+    ) throws -> String {
+        // Map effect to the Keynote UI menu name
+        let effectName: String
+        switch effect.lowercased() {
+        case "fade":    effectName = "Fade In"
+        case "move_in": effectName = "Move In"
+        case "wipe":    effectName = "Wipe"
+        case "shimmer": effectName = "Shimmer"
+        case "sparkle": effectName = "Sparkle"
+        case "pop":     effectName = "Pop"
+        default:        effectName = "Appear"
+        }
+
+        let script = """
+        -- 1. Activate Keynote, navigate to slide, select the item
+        tell application "Keynote"
+            activate
+            open POSIX file "\(documentPath)"
+            delay 0.5
+            tell front document
+                set current slide to slide \(slideIndex)
+                delay 0.3
+                set selection to {iWork item \(objectIndex) of slide \(slideIndex)}
+                delay 0.5
+            end tell
+        end tell
+
+        -- 2. Switch inspector to Animate tab (radio button 2)
+        tell application "System Events"
+            tell process "Keynote"
+                set w to window 1
+                set rg to radio group 1 of w
+                click radio button 2 of rg
+                delay 0.8
+            end tell
+        end tell
+
+        -- 3. Find "Add an Effect" button — check direct window children first, then groups
+        tell application "System Events"
+            tell process "Keynote"
+                set w to window 1
+                set addBtn to missing value
+
+                -- Primary: direct window buttons (confirmed location in Keynote 14+)
+                repeat with b in every button of w
+                    try
+                        if title of b contains "Add" then
+                            set addBtn to b
+                            exit repeat
+                        end if
+                    end try
+                end repeat
+
+                -- Fallback: search 3 levels deep in groups
+                if addBtn is missing value then
+                    repeat with g1 in every group of w
+                        if addBtn is missing value then
+                            repeat with b in every button of g1
+                                try
+                                    if title of b contains "Add" then
+                                        set addBtn to b
+                                        exit repeat
+                                    end if
+                                end try
+                            end repeat
+                            if addBtn is missing value then
+                                repeat with g2 in every group of g1
+                                    if addBtn is missing value then
+                                        repeat with b in every button of g2
+                                            try
+                                                if title of b contains "Add" then
+                                                    set addBtn to b
+                                                    exit repeat
+                                                end if
+                                            end try
+                                        end repeat
+                                        if addBtn is missing value then
+                                            repeat with g3 in every group of g2
+                                                repeat with b in every button of g3
+                                                    try
+                                                        if title of b contains "Add" then
+                                                            set addBtn to b
+                                                            exit repeat
+                                                        end if
+                                                    end try
+                                                end repeat
+                                            end repeat
+                                        end if
+                                    end if
+                                end repeat
+                            end if
+                        end if
+                    end repeat
+                end if
+
+                if addBtn is missing value then
+                    return "Add an Effect button not found — ensure an object is selected and the Animate tab is visible in the inspector."
+                end if
+
+                -- 4. Click "Add an Effect" — opens effects chooser panel
+                click addBtn
+                delay 1.0
+
+                -- 5. Find the effect in the chooser (scroll area with buttons/cells)
+                set effectFound to false
+
+                -- Look for named buttons in scroll areas (Keynote effects chooser)
+                repeat with sa in every scroll area of w
+                    repeat with b in every button of sa
+                        try
+                            if title of b contains "\(effectName)" then
+                                click b
+                                set effectFound to true
+                                exit repeat
+                            end if
+                        end try
+                    end repeat
+                    if effectFound then exit repeat
+                    -- Also check table rows (alternate layout)
+                    try
+                        set tbl to table 1 of sa
+                        repeat with r in every row of tbl
+                            repeat with c in every cell of r
+                                try
+                                    if value of static text 1 of c contains "\(effectName)" then
+                                        click c
+                                        set effectFound to true
+                                        exit repeat
+                                    end if
+                                end try
+                            end repeat
+                            if effectFound then exit repeat
+                        end repeat
+                    end try
+                    if effectFound then exit repeat
+                end repeat
+
+                -- Fallback: search all buttons in the window for the effect name
+                if not effectFound then
+                    repeat with b in every button of w
+                        try
+                            if title of b contains "\(effectName)" then
+                                click b
+                                set effectFound to true
+                                exit repeat
+                            end if
+                        end try
+                    end repeat
+                end if
+
+                delay 0.5
+
+                if effectFound then
+                    return "Build animation '\(effectName)' added to iWork item \(objectIndex) on slide \(slideIndex)"
+                else
+                    return "Clicked Add an Effect but could not find '\(effectName)' in the chooser. Animation panel is open in Keynote — select the effect manually."
+                end if
+            end tell
+        end tell
+        """
+        return try AppleScriptRunner.run(script, timeout: 30)
     }
 
     // MARK: - Discovery Tool

@@ -73,6 +73,9 @@ enum ToolName {
     static let addComment            = "add_comment"
     static let toggleComments        = "toggle_comments"
     static let openAnimatePanel      = "open_animate_panel"
+    static let removeBullets         = "remove_bullets"
+    static let addBuildAnimation     = "add_build_animation"
+    static let removeBuildAnimations = "remove_build_animations"
     static let exportPresentation    = "export_presentation"
     static let savePresentation      = "save_presentation"
     static let savePresentationAs    = "save_presentation_as"
@@ -781,6 +784,47 @@ enum ToolDefinitions {
             inputSchema: schema(
                 properties: ["document_path": stringProp("Full POSIX path to the .key file")],
                 required: ["document_path"]
+            )
+        ),
+
+        Tool(
+            name: ToolName.removeBullets,
+            description: "Remove bullet point formatting from a text item on a slide. Pass objectIndex=0 to strip bullets from all text items on the slide.",
+            inputSchema: schema(
+                properties: [
+                    "document_path": stringProp("Full POSIX path to the .key file"),
+                    "slide_index": intProp("1-based slide index"),
+                    "object_index": intProp("1-based object index (text item). Pass 0 to target all text items on the slide")
+                ],
+                required: ["document_path", "slide_index", "object_index"]
+            )
+        ),
+
+        Tool(
+            name: ToolName.addBuildAnimation,
+            description: "Add a build-in animation to an iWork object on a slide via UI automation (Keynote does not expose build animations in its AppleScript dictionary). Selects the item, switches to the Animate inspector tab, and clicks 'Add an Effect'. Use objectIndex as the 1-based iWork item index (not text item index).",
+            inputSchema: schema(
+                properties: [
+                    "document_path": stringProp("Full POSIX path to the .key file"),
+                    "slide_index": intProp("1-based slide index"),
+                    "object_index": intProp("1-based iWork item index of the object to animate (use get_slide_content to find the index)"),
+                    "effect": stringProp("Animation effect: appear (default), fade, move_in, wipe, shimmer, sparkle, pop"),
+                    "build_style": stringProp("How to reveal text: paragraph (default, one line at a time) or all_at_once")
+                ],
+                required: ["document_path", "slide_index", "object_index"]
+            )
+        ),
+
+        Tool(
+            name: ToolName.removeBuildAnimations,
+            description: "Remove all build-in animations from an object on a slide. Pass objectIndex=0 to clear all objects on the slide.",
+            inputSchema: schema(
+                properties: [
+                    "document_path": stringProp("Full POSIX path to the .key file"),
+                    "slide_index": intProp("1-based slide index"),
+                    "object_index": intProp("1-based object index. Pass 0 to clear all objects on the slide")
+                ],
+                required: ["document_path", "slide_index", "object_index"]
             )
         ),
 

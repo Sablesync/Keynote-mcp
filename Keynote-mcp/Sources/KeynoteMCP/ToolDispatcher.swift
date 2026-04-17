@@ -288,6 +288,278 @@ enum ToolDispatcher {
             let menuName = try requireString(args, key: "menu_name")
             return try UIAutomationBridge.listMenuItems(menuName: menuName)
 
+        // ── Text & Object Styling ─────────────────────────────────────────
+
+        case ToolName.setTextStyle:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let objectIndex = try requireInt(args, key: "object_index")
+            let fontName = optionalString(args, key: "font_name")
+            let fontSize = optionalDouble(args, key: "font_size")
+            let colorR = optionalInt(args, key: "color_r")
+            let colorG = optionalInt(args, key: "color_g")
+            let colorB = optionalInt(args, key: "color_b")
+            return try KeynoteBridge.setTextStyle(
+                documentPath: docPath, slideIndex: slideIndex, objectIndex: objectIndex,
+                fontName: fontName, fontSize: fontSize,
+                colorR: colorR, colorG: colorG, colorB: colorB
+            )
+
+        case ToolName.setObjectOpacity:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let objectIndex = try requireInt(args, key: "object_index")
+            let opacity = try requireInt(args, key: "opacity")
+            return try KeynoteBridge.setObjectOpacity(
+                documentPath: docPath, slideIndex: slideIndex,
+                objectIndex: objectIndex, opacity: opacity
+            )
+
+        case ToolName.setObjectReflection:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let objectIndex = try requireInt(args, key: "object_index")
+            let showing = optionalString(args, key: "showing") == "true"
+            let value = optionalInt(args, key: "value")
+            return try KeynoteBridge.setObjectReflection(
+                documentPath: docPath, slideIndex: slideIndex,
+                objectIndex: objectIndex, showing: showing, value: value
+            )
+
+        case ToolName.setAllTransitions:
+            let docPath = try requireString(args, key: "document_path")
+            let effect = try requireString(args, key: "effect")
+            let duration = optionalDouble(args, key: "duration")
+            let autoTransition = optionalString(args, key: "auto_transition").map { $0 == "true" }
+            return try KeynoteBridge.setAllTransitions(
+                documentPath: docPath, effect: effect,
+                duration: duration, autoTransition: autoTransition
+            )
+
+        // ── Tables ────────────────────────────────────────────────────────
+
+        case ToolName.setTableCell:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let tableIndex = try requireInt(args, key: "table_index")
+            let row = try requireInt(args, key: "row")
+            let column = try requireInt(args, key: "column")
+            let value = try requireString(args, key: "value")
+            return try KeynoteBridge.setTableCell(
+                documentPath: docPath, slideIndex: slideIndex, tableIndex: tableIndex,
+                row: row, column: column, value: value
+            )
+
+        case ToolName.getTableCell:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let tableIndex = try requireInt(args, key: "table_index")
+            let row = try requireInt(args, key: "row")
+            let column = try requireInt(args, key: "column")
+            return try KeynoteBridge.getTableCell(
+                documentPath: docPath, slideIndex: slideIndex, tableIndex: tableIndex,
+                row: row, column: column
+            )
+
+        case ToolName.setTableStyle:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let tableIndex = try requireInt(args, key: "table_index")
+            let fontName = optionalString(args, key: "font_name")
+            let fontSize = optionalDouble(args, key: "font_size")
+            let textColorR = optionalInt(args, key: "text_color_r")
+            let textColorG = optionalInt(args, key: "text_color_g")
+            let textColorB = optionalInt(args, key: "text_color_b")
+            let bgColorR = optionalInt(args, key: "bg_color_r")
+            let bgColorG = optionalInt(args, key: "bg_color_g")
+            let bgColorB = optionalInt(args, key: "bg_color_b")
+            return try KeynoteBridge.setTableStyle(
+                documentPath: docPath, slideIndex: slideIndex, tableIndex: tableIndex,
+                fontName: fontName, fontSize: fontSize,
+                textColorR: textColorR, textColorG: textColorG, textColorB: textColorB,
+                bgColorR: bgColorR, bgColorG: bgColorG, bgColorB: bgColorB
+            )
+
+        case ToolName.sortTable:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let tableIndex = try requireInt(args, key: "table_index")
+            let columnIndex = try requireInt(args, key: "column_index")
+            let ascending = optionalString(args, key: "ascending") != "false"
+            return try KeynoteBridge.sortTable(
+                documentPath: docPath, slideIndex: slideIndex, tableIndex: tableIndex,
+                columnIndex: columnIndex, ascending: ascending
+            )
+
+        case ToolName.mergeCells:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let tableIndex = try requireInt(args, key: "table_index")
+            let range = try requireString(args, key: "range")
+            let unmerge = optionalString(args, key: "unmerge") == "true"
+            return try KeynoteBridge.mergeCells(
+                documentPath: docPath, slideIndex: slideIndex, tableIndex: tableIndex,
+                range: range, unmerge: unmerge
+            )
+
+        case ToolName.setTableDimensions:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let tableIndex = try requireInt(args, key: "table_index")
+            let rows = optionalInt(args, key: "rows")
+            let columns = optionalInt(args, key: "columns")
+            return try KeynoteBridge.setTableDimensions(
+                documentPath: docPath, slideIndex: slideIndex, tableIndex: tableIndex,
+                rows: rows, columns: columns
+            )
+
+        // ── Charts ────────────────────────────────────────────────────────
+
+        case ToolName.addChartWithData:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let chartType = try requireString(args, key: "chart_type")
+            let rowNames = try requireString(args, key: "row_names")
+            let columnNames = try requireString(args, key: "column_names")
+            let data = try requireString(args, key: "data")
+            let groupBy = optionalString(args, key: "group_by")
+            return try KeynoteBridge.addChartWithData(
+                documentPath: docPath, slideIndex: slideIndex, chartType: chartType,
+                rowNames: rowNames, columnNames: columnNames, data: data, groupBy: groupBy
+            )
+
+        // ── Media ─────────────────────────────────────────────────────────
+
+        case ToolName.replaceImage:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let imageIndex = try requireInt(args, key: "image_index")
+            let newImagePath = try requireString(args, key: "new_image_path")
+            return try KeynoteBridge.replaceImage(
+                documentPath: docPath, slideIndex: slideIndex,
+                imageIndex: imageIndex, newImagePath: newImagePath
+            )
+
+        case ToolName.setMovieProperties:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let movieIndex = try requireInt(args, key: "movie_index")
+            let volume = optionalInt(args, key: "volume")
+            let loop = optionalString(args, key: "loop")
+            return try KeynoteBridge.setMovieProperties(
+                documentPath: docPath, slideIndex: slideIndex,
+                movieIndex: movieIndex, volume: volume, loop: loop
+            )
+
+        case ToolName.setAudioProperties:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let audioIndex = try requireInt(args, key: "audio_index")
+            let volume = optionalInt(args, key: "volume")
+            let loop = optionalString(args, key: "loop")
+            return try KeynoteBridge.setAudioProperties(
+                documentPath: docPath, slideIndex: slideIndex,
+                audioIndex: audioIndex, volume: volume, loop: loop
+            )
+
+        // ── Password & Notes ──────────────────────────────────────────────
+
+        case ToolName.setPassword:
+            let docPath = try requireString(args, key: "document_path")
+            let password = try requireString(args, key: "password")
+            let hint = optionalString(args, key: "hint")
+            return try KeynoteBridge.setPassword(
+                documentPath: docPath, password: password, hint: hint
+            )
+
+        case ToolName.removePassword:
+            let docPath = try requireString(args, key: "document_path")
+            let password = try requireString(args, key: "password")
+            return try KeynoteBridge.removePassword(documentPath: docPath, password: password)
+
+        case ToolName.getAllPresenterNotes:
+            let docPath = try requireString(args, key: "document_path")
+            return try KeynoteBridge.getAllPresenterNotes(documentPath: docPath)
+
+        // ── Enhanced Export ───────────────────────────────────────────────
+
+        case ToolName.exportPDF:
+            let docPath = try requireString(args, key: "document_path")
+            let exportPath = try requireString(args, key: "export_path")
+            let imageQuality = optionalString(args, key: "image_quality")
+            let skipSlides = optionalString(args, key: "skip_slides").map { $0 == "true" }
+            let includeComments = optionalString(args, key: "include_comments").map { $0 == "true" }
+            return try KeynoteBridge.exportPDF(
+                documentPath: docPath, exportPath: exportPath,
+                imageQuality: imageQuality, skipSlides: skipSlides, includeComments: includeComments
+            )
+
+        case ToolName.exportImages:
+            let docPath = try requireString(args, key: "document_path")
+            let exportPath = try requireString(args, key: "export_path")
+            let format = optionalString(args, key: "format")
+            return try KeynoteBridge.exportImages(
+                documentPath: docPath, exportPath: exportPath, format: format
+            )
+
+        case ToolName.exportMovie:
+            let docPath = try requireString(args, key: "document_path")
+            let exportPath = try requireString(args, key: "export_path")
+            let resolution = optionalString(args, key: "resolution")
+            let codec = optionalString(args, key: "codec")
+            let fps = optionalString(args, key: "fps")
+            return try KeynoteBridge.exportMovie(
+                documentPath: docPath, exportPath: exportPath,
+                resolution: resolution, codec: codec, fps: fps
+            )
+
+        // ── UI Automation: Comments & Animate ─────────────────────────────
+
+        case ToolName.removeBullets:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let objectIndex = try requireInt(args, key: "object_index")
+            return try KeynoteBridge.removeBullets(
+                documentPath: docPath, slideIndex: slideIndex, objectIndex: objectIndex
+            )
+
+        case ToolName.addBuildAnimation:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let objectIndex = try requireInt(args, key: "object_index")
+            let effect = optionalString(args, key: "effect") ?? "appear"
+            let buildBy = optionalString(args, key: "build_style")
+            return try UIAutomationBridge.addBuildAnimation(
+                documentPath: docPath, slideIndex: slideIndex, objectIndex: objectIndex,
+                effect: effect, buildBy: buildBy
+            )
+
+        case ToolName.removeBuildAnimations:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let objectIndex = try requireInt(args, key: "object_index")
+            return try KeynoteBridge.removeBuildAnimations(
+                documentPath: docPath, slideIndex: slideIndex, objectIndex: objectIndex
+            )
+
+        case ToolName.addComment:
+            let docPath = try requireString(args, key: "document_path")
+            let slideIndex = try requireInt(args, key: "slide_index")
+            let objectIndex = try requireInt(args, key: "object_index")
+            let text = try requireString(args, key: "text")
+            return try UIAutomationBridge.addComment(
+                documentPath: docPath, slideIndex: slideIndex,
+                objectIndex: objectIndex, text: text
+            )
+
+        case ToolName.toggleComments:
+            let docPath = try requireString(args, key: "document_path")
+            return try UIAutomationBridge.toggleComments(documentPath: docPath)
+
+        case ToolName.openAnimatePanel:
+            let docPath = try requireString(args, key: "document_path")
+            return try UIAutomationBridge.openAnimatePanel(documentPath: docPath)
+
         case ToolName.exportPresentation:
             let docPath = try requireString(args, key: "document_path")
             let exportPath = try requireString(args, key: "export_path")
