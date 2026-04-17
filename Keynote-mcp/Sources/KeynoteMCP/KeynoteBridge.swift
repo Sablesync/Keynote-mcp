@@ -415,6 +415,704 @@ enum KeynoteBridge {
     // MARK: Explicit Save
     // -------------------------------------------------------------------------
 
+    // -------------------------------------------------------------------------
+    // MARK: New Tools
+    // -------------------------------------------------------------------------
+
+    /// List all installed Keynote themes by name.
+    static func listThemes() throws -> String {
+        let script = """
+        tell application "Keynote"
+            set output to ""
+            repeat with t in themes
+                set output to output & name of t & "\n"
+            end repeat
+            return output
+        end tell
+        """
+        let raw = try AppleScriptRunner.run(script)
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Delete a slide at the given 1-based index.
+    static func deleteSlide(documentPath: String, slideIndex: Int) throws -> String {
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                delete slide \(slideIndex)
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Slide \(slideIndex) deleted"
+    }
+
+    /// Duplicate a slide at the given 1-based index.
+    static func duplicateSlide(documentPath: String, slideIndex: Int) throws -> String {
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                set newSlide to duplicate slide \(slideIndex)
+                return slide number of newSlide as text
+            end tell
+        end tell
+        """
+        let newIndex = try AppleScriptRunner.run(script)
+        try AppleScriptRunner.run("""
+        tell application "Keynote"
+            save front document
+        end tell
+        """)
+        return "Slide \(slideIndex) duplicated as slide \(newIndex)"
+    }
+
+    /// Set the presenter notes on a specific slide.
+    static func setPresenterNotes(documentPath: String, slideIndex: Int, notes: String) throws -> String {
+        let escaped = notes.replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                set presenter notes of slide \(slideIndex) to "\(escaped)"
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Presenter notes set on slide \(slideIndex)"
+    }
+
+    /// Set the slide transition. Effect names: magic move, dissolve, push, wipe, reveal, cube,
+    /// flip, shimmer, sparkle, swing, fall, confetti, mosaic, page flip, pivot, etc.
+    static func setSlideTransition(
+        documentPath: String,
+        slideIndex: Int,
+        effect: String,
+        duration: Double?,
+        direction: String?
+    ) throws -> String {
+        var props = "transition effect:\(effect)"
+        if let d = duration { props += ", transition duration:\(d)" }
+        if let dir = direction { props += ", transition direction:\(dir)" }
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                set transition properties of slide \(slideIndex) to {\(props)}
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Transition '\(effect)' set on slide \(slideIndex)"
+    }
+
+    /// Set document-level properties: slide_numbers_showing, auto_loop, auto_play,
+    /// auto_restart, max_idle_duration, width, height.
+    static func setDocumentProperties(
+        documentPath: String,
+        slideNumbersShowing: Bool?,
+        autoLoop: Bool?,
+        autoPlay: Bool?,
+        autoRestart: Bool?,
+        maxIdleDuration: Int?,
+        width: Int?,
+        height: Int?
+    ) throws -> String {
+        var lines: [String] = []
+        if let v = slideNumbersShowing { lines.append("set slide numbers showing to \(v)") }
+        if let v = autoLoop           { lines.append("set auto loop to \(v)") }
+        if let v = autoPlay           { lines.append("set auto play to \(v)") }
+        if let v = autoRestart        { lines.append("set auto restart to \(v)") }
+        if let v = maxIdleDuration    { lines.append("set maximum idle duration to \(v)") }
+        if let v = width              { lines.append("set width to \(v)") }
+        if let v = height             { lines.append("set height to \(v)") }
+        guard !lines.isEmpty else { return "Nothing to set" }
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                \(lines.joined(separator: "\n                "))
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Document properties updated: \(lines.joined(separator: ", "))"
+    }
+
+    /// Mark or unmark a slide as skipped.
+    static func skipSlide(documentPath: String, slideIndex: Int, skip: Bool) throws -> String {
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                set skipped of slide \(slideIndex) to \(skip)
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Slide \(slideIndex) \(skip ? "marked as skipped" : "unskipped")"
+    }
+
+    /// Advance to the next slide during a running slideshow.
+    static func showNextSlide(documentPath: String) throws -> String {
+        let script = """
+        tell application "Keynote"
+            show next of front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Advanced to next slide"
+    }
+
+    /// Go back to the previous slide during a running slideshow.
+    static func showPreviousSlide(documentPath: String) throws -> String {
+        let script = """
+        tell application "Keynote"
+            show previous of front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Went back to previous slide"
+    }
+
+    /// Bulk-create slides from a list of image file paths.
+    static func makeImageSlides(documentPath: String, imagePaths: [String]) throws -> String {
+        let fileList = imagePaths.map { "POSIX file \"\($0)\"" }.joined(separator: ", ")
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            make image slides from front document image files {\(fileList)}
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Created \(imagePaths.count) image slide(s)"
+    }
+
+    /// Move and/or resize the Nth object on a slide (1-based object index).
+    static func setObjectPosition(
+        documentPath: String,
+        slideIndex: Int,
+        objectIndex: Int,
+        x: Double?, y: Double?,
+        width: Double?, height: Double?,
+        rotation: Double?
+    ) throws -> String {
+        var lines: [String] = []
+        if let x = x, let y = y { lines.append("set position of item \(objectIndex) to {\(Int(x)), \(Int(y))}") }
+        if let w = width         { lines.append("set width of item \(objectIndex) to \(Int(w))") }
+        if let h = height        { lines.append("set height of item \(objectIndex) to \(Int(h))") }
+        if let r = rotation      { lines.append("set rotation of item \(objectIndex) to \(r)") }
+        guard !lines.isEmpty else { return "Nothing to change" }
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    \(lines.joined(separator: "\n                    "))
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Object \(objectIndex) on slide \(slideIndex) updated"
+    }
+
+    // -------------------------------------------------------------------------
+    // MARK: Text & Object Styling
+    // -------------------------------------------------------------------------
+
+    /// Set font name, size, and/or color on a specific shape's text.
+    /// Color values are 0–255 RGB.
+    static func setTextStyle(
+        documentPath: String,
+        slideIndex: Int,
+        objectIndex: Int,
+        fontName: String?,
+        fontSize: Double?,
+        colorR: Int?, colorG: Int?, colorB: Int?
+    ) throws -> String {
+        var lines: [String] = []
+        if let f = fontName { lines.append("set font to \"\(f)\"") }
+        if let s = fontSize { lines.append("set size to \(s)") }
+        if let r = colorR, let g = colorG, let b = colorB {
+            lines.append("set color to {\(r * 257), \(g * 257), \(b * 257)}")
+        }
+        guard !lines.isEmpty else { return "Nothing to set" }
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    tell object text of shape \(objectIndex)
+                        \(lines.joined(separator: "\n                        "))
+                    end tell
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Text style updated on slide \(slideIndex) shape \(objectIndex)"
+    }
+
+    /// Set the opacity (0–100) of an object on a slide.
+    static func setObjectOpacity(documentPath: String, slideIndex: Int, objectIndex: Int, opacity: Int) throws -> String {
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                set opacity of item \(objectIndex) of slide \(slideIndex) to \(opacity)
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Object \(objectIndex) opacity set to \(opacity)%"
+    }
+
+    /// Enable/disable reflection on an object and set its value (0–100).
+    static func setObjectReflection(
+        documentPath: String,
+        slideIndex: Int,
+        objectIndex: Int,
+        showing: Bool,
+        value: Int?
+    ) throws -> String {
+        var lines = ["set reflection showing of item \(objectIndex) to \(showing)"]
+        if let v = value { lines.append("set reflection value of item \(objectIndex) to \(v)") }
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    \(lines.joined(separator: "\n                    "))
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Reflection \(showing ? "enabled" : "disabled") on object \(objectIndex)"
+    }
+
+    /// Set same transition on every slide in the presentation.
+    static func setAllTransitions(
+        documentPath: String,
+        effect: String,
+        duration: Double?,
+        autoTransition: Bool?
+    ) throws -> String {
+        var props = "transition effect:\(effect)"
+        if let d = duration { props += ", transition duration:\(d)" }
+        if let a = autoTransition { props += ", automatic transition:\(a)" }
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                repeat with s in slides
+                    set transition properties of s to {\(props)}
+                end repeat
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Transition '\(effect)' applied to all slides"
+    }
+
+    // -------------------------------------------------------------------------
+    // MARK: Tables
+    // -------------------------------------------------------------------------
+
+    /// Set the value of a table cell (row and column are 1-based).
+    static func setTableCell(
+        documentPath: String,
+        slideIndex: Int,
+        tableIndex: Int,
+        row: Int,
+        column: Int,
+        value: String
+    ) throws -> String {
+        let valueExpr = Double(value) != nil ? value : "\"\(value.replacingOccurrences(of: "\"", with: "\\\""))\""
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    set value of cell \(column) of row \(row) of table \(tableIndex) to \(valueExpr)
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Table \(tableIndex) cell [\(row),\(column)] set to \(value)"
+    }
+
+    /// Read the value of a table cell.
+    static func getTableCell(
+        documentPath: String,
+        slideIndex: Int,
+        tableIndex: Int,
+        row: Int,
+        column: Int
+    ) throws -> String {
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    return value of cell \(column) of row \(row) of table \(tableIndex) as text
+                end tell
+            end tell
+        end tell
+        """
+        return try AppleScriptRunner.run(script)
+    }
+
+    /// Set font, size, text color, and background color on a table's full cell range.
+    /// Color values are 0–255 RGB, e.g. colorR:255 colorG:0 colorB:0 = red.
+    static func setTableStyle(
+        documentPath: String,
+        slideIndex: Int,
+        tableIndex: Int,
+        fontName: String?,
+        fontSize: Double?,
+        textColorR: Int?, textColorG: Int?, textColorB: Int?,
+        bgColorR: Int?, bgColorG: Int?, bgColorB: Int?
+    ) throws -> String {
+        var lines: [String] = []
+        if let f = fontName { lines.append("set font name of theRange to \"\(f)\"") }
+        if let s = fontSize { lines.append("set font size of theRange to \(s)") }
+        if let r = textColorR, let g = textColorG, let b = textColorB {
+            lines.append("set text color of theRange to {\(r * 257), \(g * 257), \(b * 257)}")
+        }
+        if let r = bgColorR, let g = bgColorG, let b = bgColorB {
+            lines.append("set background color of theRange to {\(r * 257), \(g * 257), \(b * 257)}")
+        }
+        guard !lines.isEmpty else { return "Nothing to set" }
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    set theRange to cell range of table \(tableIndex)
+                    \(lines.joined(separator: "\n                    "))
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Table \(tableIndex) style updated on slide \(slideIndex)"
+    }
+
+    /// Sort a table by the specified column (1-based), ascending or descending.
+    static func sortTable(
+        documentPath: String,
+        slideIndex: Int,
+        tableIndex: Int,
+        columnIndex: Int,
+        ascending: Bool
+    ) throws -> String {
+        let dir = ascending ? "ascending" : "descending"
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    sort table \(tableIndex) by column \(columnIndex) direction \(dir)
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Table \(tableIndex) sorted by column \(columnIndex) \(dir)"
+    }
+
+    /// Merge cells in a range (e.g. "A1:B2").
+    static func mergeCells(documentPath: String, slideIndex: Int, tableIndex: Int, range: String, unmerge: Bool) throws -> String {
+        let action = unmerge ? "unmerge" : "merge"
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    \(action) range "\(range)" of table \(tableIndex)
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Cells \(range) \(unmerge ? "unmerged" : "merged") in table \(tableIndex)"
+    }
+
+    /// Set the row and/or column count of a table.
+    static func setTableDimensions(
+        documentPath: String,
+        slideIndex: Int,
+        tableIndex: Int,
+        rows: Int?,
+        columns: Int?
+    ) throws -> String {
+        var lines: [String] = []
+        if let r = rows    { lines.append("set row count of table \(tableIndex) to \(r)") }
+        if let c = columns { lines.append("set column count of table \(tableIndex) to \(c)") }
+        guard !lines.isEmpty else { return "Nothing to set" }
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    \(lines.joined(separator: "\n                    "))
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Table \(tableIndex) dimensions updated"
+    }
+
+    // -------------------------------------------------------------------------
+    // MARK: Charts
+    // -------------------------------------------------------------------------
+
+    /// Add a chart with data to a slide.
+    /// rowNames and columnNames are comma-separated strings.
+    /// data is a comma-separated list of numbers in row-major order.
+    /// chartType: vertical_bar_2d, horizontal_bar_2d, pie_2d, line_2d, area_2d, scatterplot_2d, etc.
+    static func addChartWithData(
+        documentPath: String,
+        slideIndex: Int,
+        chartType: String,
+        rowNames: String,
+        columnNames: String,
+        data: String,
+        groupBy: String?
+    ) throws -> String {
+        let rows = rowNames.split(separator: ",").map { "\"\($0.trimmingCharacters(in: .whitespaces))\"" }.joined(separator: ", ")
+        let cols = columnNames.split(separator: ",").map { "\"\($0.trimmingCharacters(in: .whitespaces))\"" }.joined(separator: ", ")
+        let vals = data.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: ", ")
+        let group = groupBy == "row" ? "group by chart row" : "group by chart column"
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    add chart ¬
+                        row names {\(rows)} ¬
+                        column names {\(cols)} ¬
+                        data {\(vals)} ¬
+                        type \(chartType) ¬
+                        \(group)
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "\(chartType) chart added to slide \(slideIndex)"
+    }
+
+    // -------------------------------------------------------------------------
+    // MARK: Media
+    // -------------------------------------------------------------------------
+
+    /// Replace the image file of an existing image object on a slide.
+    static func replaceImage(documentPath: String, slideIndex: Int, imageIndex: Int, newImagePath: String) throws -> String {
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                set file name of image \(imageIndex) of slide \(slideIndex) to POSIX file "\(newImagePath)"
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Image \(imageIndex) on slide \(slideIndex) replaced"
+    }
+
+    /// Set volume (0–100) and/or repetition on a movie object.
+    static func setMovieProperties(
+        documentPath: String,
+        slideIndex: Int,
+        movieIndex: Int,
+        volume: Int?,
+        loop: String?
+    ) throws -> String {
+        var lines: [String] = []
+        if let v = volume { lines.append("set movie volume of movie \(movieIndex) to \(v)") }
+        if let l = loop   { lines.append("set repetition method of movie \(movieIndex) to \(l)") }
+        guard !lines.isEmpty else { return "Nothing to set" }
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    \(lines.joined(separator: "\n                    "))
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Movie \(movieIndex) properties updated"
+    }
+
+    /// Set volume (0–100) and/or repetition on an audio clip.
+    static func setAudioProperties(
+        documentPath: String,
+        slideIndex: Int,
+        audioIndex: Int,
+        volume: Int?,
+        loop: String?
+    ) throws -> String {
+        var lines: [String] = []
+        if let v = volume { lines.append("set clip volume of audio clip \(audioIndex) to \(v)") }
+        if let l = loop   { lines.append("set repetition method of audio clip \(audioIndex) to \(l)") }
+        guard !lines.isEmpty else { return "Nothing to set" }
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                tell slide \(slideIndex)
+                    \(lines.joined(separator: "\n                    "))
+                end tell
+            end tell
+            save front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Audio clip \(audioIndex) properties updated"
+    }
+
+    // -------------------------------------------------------------------------
+    // MARK: Password
+    // -------------------------------------------------------------------------
+
+    static func setPassword(documentPath: String, password: String, hint: String?) throws -> String {
+        let hintPart = hint.map { " hint \"\($0)\"" } ?? ""
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            set password "\(password)" to front document\(hintPart) saving in keychain false
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Password set on presentation"
+    }
+
+    static func removePassword(documentPath: String, password: String) throws -> String {
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            remove password "\(password)" from front document
+        end tell
+        """
+        try AppleScriptRunner.run(script)
+        return "Password removed from presentation"
+    }
+
+    // -------------------------------------------------------------------------
+    // MARK: Presenter Notes (bulk)
+    // -------------------------------------------------------------------------
+
+    /// Read presenter notes from every slide.
+    static func getAllPresenterNotes(documentPath: String) throws -> String {
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            tell front document
+                set output to ""
+                repeat with i from 1 to count of slides
+                    set output to output & "Slide " & i & ": " & (presenter notes of slide i as text) & "\n"
+                end repeat
+                return output
+            end tell
+        end tell
+        """
+        return try AppleScriptRunner.run(script)
+    }
+
+    // -------------------------------------------------------------------------
+    // MARK: Export (enhanced)
+    // -------------------------------------------------------------------------
+
+    /// Export to PDF with quality and comment options.
+    static func exportPDF(
+        documentPath: String,
+        exportPath: String,
+        imageQuality: String?,
+        skipSlides: Bool?,
+        includeComments: Bool?
+    ) throws -> String {
+        let quality  = imageQuality ?? "Best"
+        let skip     = skipSlides ?? false
+        let comments = includeComments ?? false
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            export front document to POSIX file "\(exportPath)" as PDF ¬
+                with properties {PDF image quality:\(quality), skipped slides:\(skip), include comments:\(comments)}
+        end tell
+        """
+        try AppleScriptRunner.run(script, timeout: 60)
+        return "Exported PDF to \(exportPath)"
+    }
+
+    /// Export slides as individual image files (PNG, JPEG, or TIFF).
+    static func exportImages(
+        documentPath: String,
+        exportPath: String,
+        format: String?
+    ) throws -> String {
+        let fmt = format?.uppercased() ?? "PNG"
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            export front document to POSIX file "\(exportPath)" ¬
+                as slide images with properties {image format:\(fmt)}
+        end tell
+        """
+        try AppleScriptRunner.run(script, timeout: 60)
+        return "Slides exported as \(fmt) images to \(exportPath)"
+    }
+
+    /// Export as QuickTime movie with codec, resolution and framerate options.
+    static func exportMovie(
+        documentPath: String,
+        exportPath: String,
+        resolution: String?,
+        codec: String?,
+        fps: String?
+    ) throws -> String {
+        let res   = resolution ?? "format1080p"
+        let codec = codec      ?? "h264"
+        let fps   = fps        ?? "FPS30"
+        let script = """
+        tell application "Keynote"
+            open POSIX file "\(documentPath)"
+            export front document to POSIX file "\(exportPath)" ¬
+                as QuickTime movie with properties ¬
+                {movie format:\(res), movie codec:\(codec), movie framerate:\(fps)}
+        end tell
+        """
+        try AppleScriptRunner.run(script, timeout: 120)
+        return "Exported movie to \(exportPath) [\(res) / \(codec) / \(fps)]"
+    }
+
     /// Force-save the front document to its original path.
     /// Use this after a batch of edits, especially when the file lives in a
     /// cloud-synced folder (Box, Dropbox, iCloud) where implicit `save` can fail silently.
